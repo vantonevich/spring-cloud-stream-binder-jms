@@ -1,0 +1,11 @@
+#!/bin/bash
+set -e -x
+
+dir=$(dirname $0)
+ver=7.2.1.148
+
+mvn install:install-file -Dfile=$dir/solsuite-$ver.pom -DpomFile=$dir/solsuite-$ver.pom
+mvn install:install-file -Dfile=$dir/sol-common-$ver.jar -DpomFile=$dir/sol-common-$ver.pom
+mvn install:install-file -Dfile=$dir/sol-jcsmp-$ver.jar  -DpomFile=$dir/sol-jcsmp-$ver.pom
+mvn install:install-file -Dfile=$dir/sol-jms-$ver.jar -DpomFile=$dir/sol-jms-$ver.pom
+
