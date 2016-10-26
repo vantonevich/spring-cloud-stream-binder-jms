@@ -17,6 +17,7 @@ public class EndToEndIntegrationTests extends org.springframework.cloud.stream.b
 
     @Override
     protected void deprovisionDLQ() throws Exception {
-        SolaceTestUtils.deprovisionDLQ();
+        String name = getDestination();
+        SolaceTestUtils.deprovisionTopicAndDLQ(name);
     }
 }

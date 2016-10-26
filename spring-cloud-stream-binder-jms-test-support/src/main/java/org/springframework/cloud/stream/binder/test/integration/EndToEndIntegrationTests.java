@@ -80,6 +80,10 @@ public abstract class EndToEndIntegrationTests {
         this.jmsTemplate = new JmsTemplate(connectionFactory);
     }
 
+    public String getDestination() {
+        return destination;
+    }
+
     @Before
     public void configureGroupsAndDestinations() throws Exception {
         deprovisionDLQ();

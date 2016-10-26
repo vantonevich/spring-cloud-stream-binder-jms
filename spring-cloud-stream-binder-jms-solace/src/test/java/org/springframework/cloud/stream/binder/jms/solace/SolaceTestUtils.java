@@ -17,6 +17,7 @@
 package org.springframework.cloud.stream.binder.jms.solace;
 
 import com.solacesystems.jcsmp.*;
+import com.solacesystems.jcsmp.impl.DurableTopicEndpointImpl;
 import com.solacesystems.jcsmp.impl.XMLContentMessageImpl;
 import com.solacesystems.jcsmp.transaction.TransactedSession;
 import com.solacesystems.jms.SolJmsUtility;
@@ -84,8 +85,33 @@ public class SolaceTestUtils {
         }
     }
 
+    public static void deprovisionTopicAndDLQ(String topicName) throws JCSMPException {
+        if (topicName != null) {
+            TopicEndpoint topicEndpoint = new DurableTopicEndpointImpl(topicName);
+            deprovision(topicEndpoint, DLQ);
+        } else {
+            deprovisionDLQ();
+        }
+    }
+
+    public static void deprovisionTopicAndDLQ(Topic topic) throws JCSMPException {
+        String name = topic != null ? topic.getName() : null;
+        deprovisionTopicAndDLQ(name);
+    }
+
     public static void deprovisionDLQ() throws JCSMPException {
-        createSession().deprovision(DLQ, WAIT_FOR_CONFIRM | FLAG_IGNORE_DOES_NOT_EXIST);
+        deprovision(DLQ);
+    }
+
+    public static void deprovision(Endpoint ... endPoints) throws JCSMPException {
+        JCSMPSession session = createSession();
+        try {
+            for (Endpoint endPoint : endPoints) {
+                session.deprovision(endPoint, WAIT_FOR_CONFIRM | FLAG_IGNORE_DOES_NOT_EXIST);
+            }
+        } finally {
+            session.closeSession();
+        }
     }
 
     public static BytesXMLMessage waitForDeadLetter() {
@@ -195,6 +221,15 @@ public class SolaceTestUtils {
         public int getReceivedMessageCount() {
             return receivedMessageCount.get();
         }
+    }
+
+    public static void close(JCSMPSession ...sessions) {
+        for (JCSMPSession session : sessions) {
+            if (session != null) {
+                session.closeSession();
+            }
+        }
+
     }
 
 }

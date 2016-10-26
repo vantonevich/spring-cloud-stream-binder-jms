@@ -18,6 +18,7 @@ package org.springframework.cloud.stream.binder.jms.solace;
 
 import com.google.common.collect.Iterables;
 import com.solacesystems.jcsmp.*;
+import com.solacesystems.jcsmp.impl.DurableTopicEndpointImpl;
 import com.solacesystems.jcsmp.transaction.TransactedSession;
 import org.hamcrest.Matchers;
 import org.junit.After;
@@ -41,6 +42,7 @@ public class SolaceQueueProvisionerIntegrationTests {
 
     private SolaceQueueProvisioner solaceQueueProvisioner;
     private JCSMPSession session;
+    private JCSMPSession session2;
     private XMLMessageProducer messageProducer;
     private Topic topic;
     private SolaceConfigurationProperties solaceConfigurationProperties;
@@ -48,7 +50,9 @@ public class SolaceQueueProvisionerIntegrationTests {
     @Before
     public void setUp() throws Exception {
         solaceConfigurationProperties = SolaceTestUtils.getSolaceProperties();
-
+        topic = null;
+        session = null;
+        session2 = null;
         this.solaceQueueProvisioner = new SolaceQueueProvisioner(solaceConfigurationProperties);
         this.session = SolaceTestUtils.createSession();
         this.messageProducer = session.getMessageProducer(new MessageProducerVoidEventHandler());
@@ -57,7 +61,10 @@ public class SolaceQueueProvisionerIntegrationTests {
 
     @After
     public void tearDown() throws Exception {
-        SolaceTestUtils.deprovisionDLQ();
+        SolaceTestUtils.deprovisionTopicAndDLQ(topic);
+        topic = null;
+        SolaceTestUtils.close(session, session2);
+        session = null;
     }
 
     @Test
@@ -141,8 +148,7 @@ public class SolaceQueueProvisionerIntegrationTests {
         CountingListener countingListener = new CountingListener(latch);
         CountingListener countingListener2 = new CountingListener(latch);
 
-        JCSMPSession session = SolaceTestUtils.createSession();
-        JCSMPSession session2 = SolaceTestUtils.createSession();
+        session2 = SolaceTestUtils.createSession();
 
         FlowReceiver consumer = session.createFlow(countingListener, consumerFlowProperties);
         FlowReceiver consumer2 = session2.createFlow(countingListener2, consumerFlowProperties);
