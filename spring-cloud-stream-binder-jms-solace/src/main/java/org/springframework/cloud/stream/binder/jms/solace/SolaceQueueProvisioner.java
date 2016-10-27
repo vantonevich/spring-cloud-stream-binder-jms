@@ -16,16 +16,31 @@
 
 package org.springframework.cloud.stream.binder.jms.solace;
 
-import com.solacesystems.jcsmp.*;
-import com.solacesystems.jcsmp.impl.DurableTopicEndpointImpl;
-import com.solacesystems.jms.SolJmsUtility;
+import java.util.Arrays;
+
+import javax.jms.Connection;
+import javax.jms.ConnectionFactory;
+import javax.jms.Session;
+
 import org.apache.commons.lang.ArrayUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.springframework.cloud.stream.binder.jms.solace.config.SolaceConfigurationProperties;
 import org.springframework.cloud.stream.binder.jms.spi.QueueProvisioner;
 import org.springframework.jms.support.JmsUtils;
 
-import javax.jms.Connection;
-import javax.jms.ConnectionFactory;
+import com.solacesystems.jcsmp.EndpointProperties;
+import com.solacesystems.jcsmp.InvalidPropertiesException;
+import com.solacesystems.jcsmp.JCSMPErrorResponseException;
+import com.solacesystems.jcsmp.JCSMPErrorResponseSubcodeEx;
+import com.solacesystems.jcsmp.JCSMPFactory;
+import com.solacesystems.jcsmp.JCSMPProperties;
+import com.solacesystems.jcsmp.JCSMPSession;
+import com.solacesystems.jcsmp.Queue;
+import com.solacesystems.jcsmp.Topic;
+import com.solacesystems.jcsmp.TopicEndpoint;
+import com.solacesystems.jcsmp.impl.DurableTopicEndpointImpl;
+import com.solacesystems.jms.SolJmsUtility;
 
 /**
  * {@link QueueProvisioner} for Solace.
@@ -37,6 +52,7 @@ import javax.jms.ConnectionFactory;
  * @since 1.1
  */
 public class SolaceQueueProvisioner implements QueueProvisioner {
+    protected final Log logger = LogFactory.getLog(this.getClass());
     private static final String DMQ_NAME = "#DEAD_MSG_QUEUE";
     private final SessionFactory sessionFactory;
     private final ConnectionFactory connectionFactory;
@@ -58,36 +74,73 @@ public class SolaceQueueProvisioner implements QueueProvisioner {
     @Override
     public Destinations provisionTopicAndConsumerGroup(String name, String... groups) {
         Destinations.Factory destinationsFactory = new Destinations.Factory();
-
+        if (logger.isDebugEnabled()) {
+            logger.debug("provisionTopicAndConsumerGroup called with name:" + name +
+                    " groups:" + Arrays.toString(groups));
+        }
+        Connection connection = null;
+        javax.jms.Session jmsSession = null;
         try {
             Topic topic = JCSMPFactory.onlyInstance().createTopic(name);
             JCSMPSession session = sessionFactory.build();
-            Connection connection = connectionFactory.createConnection();
-            javax.jms.Session jmsSession = connection.createSession(false, 1);
-
+            connection = connectionFactory.createConnection();
+            jmsSession = connection.createSession(/*transacted:*/false,
+                        /*acknowledgeMode:*/Session.AUTO_ACKNOWLEDGE);
             // Using Durable... because non-durable Solace TopicEndpoints don't have names
             TopicEndpoint topicEndpoint = new DurableTopicEndpointImpl(name);
+            if (logger.isDebugEnabled()) {
+                logger.debug("Provisioning Solace topic " + name);
+            }
             session.provision(topicEndpoint, null, JCSMPSession.FLAG_IGNORE_ALREADY_EXISTS);
-            destinationsFactory.withTopic(jmsSession.createTopic(name));
-
-            if (ArrayUtils.isEmpty(groups)) {
-                return destinationsFactory.build();
+            if (logger.isDebugEnabled()) {
+                logger.debug("Solace topic " + name+ "provisioned OK.");
             }
 
-            for (String group : groups) {
-                destinationsFactory.addGroup(jmsSession.createQueue(group));
-                doProvision(session, topic, group);
+            javax.jms.Topic jmsTopic = jmsSession.createTopic(name);
+            if (logger.isDebugEnabled()) {
+                logger.debug("JMS topic " + name+ "created OK.");
             }
-
+            destinationsFactory.withTopic(jmsTopic);
+            if (!ArrayUtils.isEmpty(groups)) {
+                for (String group : groups) {
+                    if (group == null || group.isEmpty()) {
+                        if (logger.isInfoEnabled()) {
+                            logger.info("Received request to create empty queue for topic " + name);
+                        }
+                    } else {
+                        if (logger.isDebugEnabled()) {
+                            logger.debug("Creating JMS queue for group " + group);
+                        }
+                        javax.jms.Queue destinationGroup = jmsSession.createQueue(group);
+                        if (logger.isDebugEnabled()) {
+                            logger.debug("JMS queue for group " + name + " created OK.");
+                        }
+                        destinationsFactory.addGroup(destinationGroup);
+                        doProvision(session, topic, group);
+                        if (logger.isDebugEnabled()) {
+                            logger.debug("Provisioning Solace queue for group " + group + " completed OK.");
+                        }
+                    }
+                }
+            }
+            logger.debug("Commiting JMS session....");
             JmsUtils.commitIfNecessary(jmsSession);
-            JmsUtils.closeSession(jmsSession);
-            JmsUtils.closeConnection(connection);
+            logger.debug("Closing JMS session....");
+            jmsSession.close();
+            jmsSession = null;
+            logger.debug("Closing JMS connection....");
+            connection.close();
+            connection = null;
+            logger.debug("provisionTopicAndConsumerGroup completed OK.");
         } catch (JCSMPErrorResponseException e) {
             if (JCSMPErrorResponseSubcodeEx.SUBSCRIPTION_ALREADY_PRESENT != e.getSubcodeEx()) {
                 throw new RuntimeException(e);
             }
         } catch (Exception e) {
             throw new RuntimeException(e);
+        } finally {
+            JmsUtils.closeSession(jmsSession);
+            JmsUtils.closeConnection(connection);
         }
         return destinationsFactory.build();
     }
